@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -29,6 +30,8 @@ struct Task {
 
 struct FileContent {
   struct Task* tasks;
+  int capacity;
+  int size;
   struct tm creation_date;
   struct tm last_update;
 };
@@ -47,7 +50,7 @@ enum TaskPriority string_to_priority(const char* str) {
 void print_file_content(const char* file_name) {
   FILE *file = fopen(file_name, "r");
   if (file == NULL) {
-    perror("File %s doesn't exist in current workdir");
+    fprintf(stderr, "File %s doesn't exist in current workdir\n", file_name);
     return;
   }
   
@@ -59,13 +62,17 @@ void print_file_content(const char* file_name) {
   fclose(file);
 }
 
-void create_persistant_file() {
+void load_persistance(FILE* f_check, struct FileContent* filecontent) {
+  
+}
+
+void create_persistant_file(struct FileContent* filecontent) {
   FILE* fptr;
   
   // Check if file already exists
   FILE* f_check = fopen("persistance.json", "r");
   if (f_check != NULL) {
-    perror("Persistance file already exists, cannot recreate it");
+    fprintf(stderr, "Persistance file already exists, cannot recreate it\n");
     return;
   }
 
@@ -84,7 +91,7 @@ void create_persistant_file() {
   fclose(fptr);
 }
 
-void create_new_task() {
+void create_new_task(struct FileContent* filecontent) {
   struct Task tk;
   char buffer[200];
 
@@ -112,12 +119,49 @@ void create_new_task() {
   printf("Insert the priority of the task: ");
   if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
     buffer[strcspn(buffer, "\n")] = '\0';
-    enum TaskPriority prio;
+    enum TaskPriority prio = string_to_priority(buffer);
+    tk.priority = prio;
     memset(buffer, 0, sizeof(buffer)); // Free buffer content
   } else {
     perror("Error reading entry");
     return;
   }
+
+  printf("Insert the due date to complete the task: ");
+  if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+    buffer[strcspn(buffer, "\n")] = '\0';
+    int _ = sscanf(buffer, "%d-%d-%d",
+                   &tk.date.tm_year,
+                   &tk.date.tm_mon,
+                   &tk.date.tm_mday);
+    memset(buffer, 0, sizeof(buffer)); // Free buffer content
+  } else {
+    perror("Error reading entry");
+    return;
+  }
+  
+  // Check filecontent free space before inserting new task
+  if (filecontent->size >= filecontent->capacity) {
+    // Capacity duplication (standard strat + efficient)
+    filecontent->capacity = (filecontent->capacity == 0) ? 2 : filecontent->capacity * 2;
+    
+    // Adjust the new memory size
+    struct Task* temp = realloc(filecontent->tasks, filecontent->capacity * sizeof(struct Task));
+    if (temp == NULL) {
+      perror("Error resizing memory");
+      exit(1);
+    }
+
+    filecontent->tasks = temp;
+  } else {
+    // Add the task to free position
+    filecontent->tasks[filecontent->size] = tk;
+    filecontent->size += 1;
+    printf("Task added successfully, current number of tasks: %d\n", filecontent->size);
+  }
+
+  time_t stamp = time(NULL);
+  filecontent->last_update = *localtime(&stamp);
 
 }
 
@@ -130,9 +174,11 @@ int main(int argc, char* argv[]) {
   }
    
   const char* flag = argv[1]; // Store the flag to be used
-
-  // Register persistance file in current directory
-  create_persistant_file();
+  
+  // Instance of tasks vector, the content of the persistant file
+  struct FileContent file_content;                                 // Register persistance file in current directory
+  
+  create_persistant_file(&file_content);
 
   // Remove the -- chars from the flag for better iteration
   const char* flag_resized = flag;
